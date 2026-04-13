@@ -26,7 +26,7 @@
 #include <BLE2902.h>
 #include <WiFi.h>
 #include <Preferences.h>
-#include <esp_efuse.h>          // for esp_efuse_mac_get_default()
+#include <esp_mac.h>          // for esp_read_mac()
 
 // ── GATT UUIDs ───────────────────────────────────────────────────
 // These must also match the UUIDs in wifi_provisioning.html
@@ -37,7 +37,7 @@
 
 // ── Provisioning page base URL ────────────────────────────────────
 // ✏️  Replace with your actual hosted page URL
-#define PAGE_BASE_URL "https://github.com/Darshit-Vadgama/IoT"
+#define PAGE_BASE_URL "https://darshit-vadgama.github.io/IoT/"
 
 // ── Globals ──────────────────────────────────────────────────────
 BLEServer*         pServer     = nullptr;
@@ -77,9 +77,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
 // ─────────────────────────────────────────────────────────────────
 class SSIDCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pChar) override {
-    std::string val = pChar->getValue();
+    String val = pChar->getValue();
     if (val.length() > 0 && val.length() <= 32) {
-      pendingSSID  = String(val.c_str());
+      pendingSSID  = val;
       ssidReceived = true;
       Serial.println("[BLE] SSID received: " + pendingSSID);
     } else {
@@ -94,9 +94,9 @@ class SSIDCallbacks : public BLECharacteristicCallbacks {
 // ─────────────────────────────────────────────────────────────────
 class PassCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pChar) override {
-    std::string val = pChar->getValue();
+    String val = pChar->getValue();
     if (val.length() > 0 && val.length() <= 64) {
-      pendingPass  = String(val.c_str());
+      pendingPass  = val;
       passReceived = true;
       Serial.println("[BLE] Password received (hidden for security)");
       if (ssidReceived) {
@@ -197,7 +197,7 @@ void setup() {
   // We use the last 3 bytes (6 hex chars) as a short unique suffix.
   // e.g.  MAC = A4:CF:12:BE:09:11  →  deviceName = "IoT-BE0911"
   uint8_t mac[6];
-  esp_efuse_mac_get_default(mac);
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
   snprintf(deviceName, sizeof(deviceName), "IoT-%02X%02X%02X",
            mac[3], mac[4], mac[5]);
 

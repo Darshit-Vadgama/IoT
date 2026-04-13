@@ -30,7 +30,7 @@ import os
 
 # ─────────────────────────────────────────────────────────────────
 # ✏️  REPLACE THIS with your actual hosted provisioning page URL
-PAGE_BASE_URL = "https://YOUR_USERNAME.github.io/iot-setup/"
+PAGE_BASE_URL = "https://darshit-vadgama.github.io/IoT/"
 # ─────────────────────────────────────────────────────────────────
 
 def generate_qr(device_id: str):
