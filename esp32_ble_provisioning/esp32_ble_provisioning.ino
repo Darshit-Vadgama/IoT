@@ -1,16 +1,13 @@
 /*
- * ESP32 BLE Wi-Fi Provisioning  (with unique per-device ID)
+ * ESP32 BLE Wi-Fi Provisioning
  * ─────────────────────────────────────────────────────────────────
  * Flow:
- *   1. On boot → derive unique device name from last 3 bytes of MAC
- *      e.g.  IoT-A4CF12  (different for every ESP32 unit)
- *   2. Print QR URL to Serial so you can generate a per-device QR
- *   3. Try saved Wi-Fi credentials from NVS — skip BLE if connected
- *   4. Otherwise → start BLE advertising with the unique device name
- *   5. Phone scans QR → browser reads ?device=IoT-XXXXXX from URL
- *   6. Web Bluetooth filters by that exact name → connects only THIS device
- *   7. Phone writes SSID + password via GATT characteristics
- *   8. ESP32 connects to Wi-Fi, saves creds, notifies status back
+ *   1. On boot → try saved Wi-Fi credentials (NVS/Preferences)
+ *   2. If no saved creds (or connection fails) → start BLE advertising
+ *   3. Phone connects via Web Bluetooth (QR code → browser page)
+ *   4. Phone writes SSID, then Password via BLE GATT
+ *   5. ESP32 connects to Wi-Fi, saves creds, notifies status back
+ *   6. BLE stays alive so phone can see result ("connected" / "failed")
  *
  * Required Libraries (install via Arduino Library Manager):
  *   - ESP32 BLE Arduino  (built-in with ESP32 board package)
@@ -26,7 +23,10 @@
 #include <BLE2902.h>
 #include <WiFi.h>
 #include <Preferences.h>
-#include <esp_efuse.h>          // for esp_efuse_mac_get_default()
+
+// ── Device Identity ──────────────────────────────────────────────
+// This MUST match the name in the HTML provisioning page's filter.
+#define DEVICE_NAME "IoT-Setup"
 
 // ── GATT UUIDs ───────────────────────────────────────────────────
 // These must also match the UUIDs in wifi_provisioning.html
@@ -35,15 +35,10 @@
 #define PASS_CHAR_UUID   "beb5483e-36e1-4688-b7f5-ea07361b26a9"
 #define STATUS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26aa"
 
-// ── Provisioning page base URL ────────────────────────────────────
-// ✏️  Replace with your actual hosted page URL
-#define PAGE_BASE_URL "https://YOUR_USERNAME.github.io/iot-setup/"
-
 // ── Globals ──────────────────────────────────────────────────────
 BLEServer*         pServer     = nullptr;
 BLECharacteristic* pStatusChar = nullptr;
 
-char   deviceName[16]   = "";   // e.g. "IoT-A4CF12"  — set in setup()
 bool   deviceConnected  = false;
 bool   ssidReceived     = false;
 bool   passReceived     = false;
@@ -126,8 +121,8 @@ void sendStatus(const String& status) {
 // ─────────────────────────────────────────────────────────────────
 void startBLE() {
   Serial.println("[BLE] Initialising...");
-  BLEDevice::init(deviceName);  // unique name derived from MAC
-  BLEDevice::setMTU(185);       // allow longer writes (SSID+Pass)
+  BLEDevice::init(DEVICE_NAME);
+  BLEDevice::setMTU(185);   // allow longer writes (SSID+Pass)
 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -164,7 +159,7 @@ void startBLE() {
   pAdv->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
 
-  Serial.printf("[BLE] Advertising as \"%s\"\n", deviceName);
+  Serial.println("[BLE] Advertising as \"" DEVICE_NAME "\"");
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -191,23 +186,6 @@ bool connectWiFi(const String& ssid, const String& pass, int timeoutSeconds = 15
 void setup() {
   Serial.begin(115200);
   Serial.println("\n\n=== ESP32 BLE Provisioning ===");
-
-  // ── Derive unique device name from last 3 bytes of MAC ────────
-  // Every ESP32 has a factory-burned unique MAC in eFuse.
-  // We use the last 3 bytes (6 hex chars) as a short unique suffix.
-  // e.g.  MAC = A4:CF:12:BE:09:11  →  deviceName = "IoT-BE0911"
-  uint8_t mac[6];
-  esp_efuse_mac_get_default(mac);
-  snprintf(deviceName, sizeof(deviceName), "IoT-%02X%02X%02X",
-           mac[3], mac[4], mac[5]);
-
-  Serial.printf("[ID]   Device name : %s\n", deviceName);
-  Serial.printf("[ID]   Full MAC    : %02X:%02X:%02X:%02X:%02X:%02X\n",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  Serial.printf("[QR]   Generate QR for this device:\n");
-  Serial.printf("         python generate_qr.py %s\n", deviceName);
-  Serial.printf("[QR]   Or use this URL directly:\n");
-  Serial.printf("         %s?device=%s\n\n", PAGE_BASE_URL, deviceName);
 
   // ── Try saved credentials first ──────────────────────────────
   preferences.begin("wifi-creds", true);   // read-only namespace

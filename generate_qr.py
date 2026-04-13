@@ -1,16 +1,23 @@
 """
-QR Code Generator for IoT BLE Provisioning
-───────────────────────────────────────────
-This script generates a QR code that points to your hosted
-wifi_provisioning.html page. When a user scans it with their
-phone camera, the browser opens the page and guides them through
-BLE provisioning.
+Per-Device QR Code Generator for IoT BLE Provisioning
+───────────────────────────────────────────────────────
+Each ESP32 gets its own QR code encoding its unique device ID
+(derived from the last 3 bytes of the factory MAC address).
 
 USAGE:
-  1. Host wifi_provisioning.html at a public URL
-     (free options: GitHub Pages, Netlify, Vercel)
-  2. Set YOUR_URL below to that URL
-  3. Run:  python generate_qr.py
+  python generate_qr.py <DEVICE_ID>
+
+  Where DEVICE_ID is printed to Serial Monitor at ESP32 boot, e.g.:
+    [ID]   Device name : IoT-BE0911
+    [QR]   Generate QR for this device:
+             python generate_qr.py IoT-BE0911
+
+EXAMPLES:
+  python generate_qr.py IoT-BE0911
+  python generate_qr.py IoT-A4CF12
+
+BATCH MODE (multiple devices at once):
+  python generate_qr.py IoT-BE0911 IoT-A4CF12 IoT-002233
 
 INSTALL DEPENDENCIES:
   pip install qrcode[pil]
@@ -22,21 +29,17 @@ import sys
 import os
 
 # ─────────────────────────────────────────────────────────────────
-# ✏️  REPLACE THIS with your actual hosted URL
-# e.g. "https://your-username.github.io/iot-setup/"
-YOUR_URL = "https://YOUR_USERNAME.github.io/iot-setup/"
+# ✏️  REPLACE THIS with your actual hosted provisioning page URL
+PAGE_BASE_URL = "https://YOUR_USERNAME.github.io/iot-setup/"
 # ─────────────────────────────────────────────────────────────────
 
-OUTPUT_FILE = "iot_setup_qr.png"
-
-def generate_qr(url: str, output: str):
-    if "YOUR_USERNAME" in url:
-        print("⚠️  Please edit generate_qr.py and set YOUR_URL to your actual hosted page URL.")
-        sys.exit(1)
+def generate_qr(device_id: str):
+    url = f"{PAGE_BASE_URL}?device={device_id}"
+    output = f"iot_setup_qr_{device_id}.png"
 
     qr = qrcode.QRCode(
-        version=None,                    # auto-size
-        error_correction=ERROR_CORRECT_H,  # 30% damage recovery (good for stickers)
+        version=None,
+        error_correction=ERROR_CORRECT_H,  # 30% damage recovery — good for stickers
         box_size=12,
         border=4,
     )
@@ -46,15 +49,25 @@ def generate_qr(url: str, output: str):
     img = qr.make_image(fill_color="black", back_color="white")
     img.save(output)
 
-    print(f"✅ QR code saved to: {os.path.abspath(output)}")
-    print(f"   URL encoded: {url}")
-    print(f"   Image size:  {img.pixel_size}×{img.pixel_size} px")
-    print()
-    print("Next steps:")
-    print("  • Print or display iot_setup_qr.png on/near your IoT device")
-    print("  • Android: scan with default Camera app → opens Chrome → done")
-    print("  • iPhone:  scan with Camera app → opens Safari  ← NOT supported")
-    print("             Use the free 'Bluefy' app on iPhone instead")
+    print(f"  ✅  {device_id}  →  {os.path.abspath(output)}")
+    print(f"      URL: {url}")
 
 if __name__ == "__main__":
-    generate_qr(YOUR_URL, OUTPUT_FILE)
+    if len(sys.argv) < 2:
+        print("Usage:  python generate_qr.py <DEVICE_ID> [DEVICE_ID ...]")
+        print()
+        print("Device ID is printed to Serial Monitor at ESP32 boot:")
+        print("  [ID]   Device name : IoT-BE0911")
+        print("  [QR]   Generate QR for this device:")
+        print("           python generate_qr.py IoT-BE0911")
+        sys.exit(1)
+
+    if "YOUR_USERNAME" in PAGE_BASE_URL:
+        print("⚠️  Please edit generate_qr.py and set PAGE_BASE_URL first.")
+        sys.exit(1)
+
+    device_ids = sys.argv[1:]
+    print(f"\nGenerating {len(device_ids)} QR code(s)...\n")
+    for did in device_ids:
+        generate_qr(did.strip())
+    print()

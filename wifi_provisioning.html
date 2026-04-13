@@ -423,6 +423,12 @@
     const PASS_CHAR_UUID   = 'beb5483e-36e1-4688-b7f5-ea07361b26a9';
     const STATUS_CHAR_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26aa';
 
+    // ── Read target device ID from URL ?device=IoT-XXXXXX ───────
+    // This is embedded in the QR code so the page knows exactly
+    // which ESP32 to connect to — no ambiguity when multiple nearby.
+    const params     = new URLSearchParams(window.location.search);
+    const targetDevice = params.get('device');  // e.g. "IoT-A4CF12"
+
     let bleDevice, bleServer, ssidChar, passChar, statusChar;
 
     const enc = new TextEncoder();
@@ -436,6 +442,11 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
+      // Show which specific device this QR was generated for
+      if (targetDevice) {
+        document.querySelector('.device-pill').innerHTML =
+          `<div class="pulse"></div>${targetDevice}`;
+      }
       if (isIOS() && !hasWebBluetooth()) {
         document.getElementById('ios-banner').style.display = 'block';
         document.getElementById('connectBtn').disabled = true;
@@ -461,8 +472,15 @@
       btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;margin:0;border-width:2px"></div> Scanning…';
 
       try {
+        // If ?device=IoT-XXXXXX is in the URL, filter by that exact name.
+        // This ensures the picker only shows THIS specific ESP32 unit.
+        // Fallback (direct browser access): show all devices with "IoT-" prefix.
+        const filter = targetDevice
+          ? { name: targetDevice }
+          : { namePrefix: 'IoT-' };
+
         bleDevice = await navigator.bluetooth.requestDevice({
-          filters: [{ name: 'IoT-Setup' }],
+          filters: [filter],
           optionalServices: [SERVICE_UUID]
         });
 
