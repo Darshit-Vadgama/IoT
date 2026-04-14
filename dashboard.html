@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0f1e" />
+  <title>IoT Dashboard</title>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;600&display=swap');
+
+    /* ── Variables ─────────────────────────────────────── */
+    :root {
+      --bg:      #0a0f1e;
+      --surface: #111827;
+      --surface2:#16213a;
+      --border:  #1e2d45;
+      --accent:  #00d4ff;
+      --accent2: #0070f3;
+      --success: #22c55e;
+      --error:   #ef4444;
+      --warn:    #f59e0b;
+      --text:    #e2e8f0;
+      --muted:   #64748b;
+      --mono:    'Space Mono', monospace;
+      --sans:    'DM Sans', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100dvh;
+      padding: 1.5rem 1rem 3rem;
+    }
+
+    /* grid background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ── Layout ────────────────────────────────────────── */
+    .wrapper {
+      position: relative; z-index: 1;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+    }
+
+    .logo-icon {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .logo-icon svg { width: 20px; height: 20px; fill: white; }
+
+    h1 {
+      font-family: var(--mono);
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+    h1 span {
+      display: block;
+      font-size: .68rem;
+      color: var(--muted);
+      font-weight: 400;
+      margin-top: .15rem;
+      letter-spacing: .05em;
+    }
+
+    .device-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      background: rgba(0,212,255,.07);
+      border: 1px solid rgba(0,212,255,.2);
+      border-radius: 99px;
+      padding: .35rem .8rem;
+      font-family: var(--mono);
+      font-size: .78rem;
+      color: var(--accent);
+    }
+
+    /* ── Online indicator ──────────────────────────────── */
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background .3s;
+    }
+    .dot.online  { background: var(--success); animation: blink 2s ease infinite; }
+    .dot.offline { background: var(--error); animation: none; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* ── Cards grid ────────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.25rem 1.5rem;
+    }
+
+    .card-label {
+      font-size: .72rem;
+      letter-spacing: .1em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: .5rem;
+    }
+
+    .card-value {
+      font-family: var(--mono);
+      font-size: 1.6rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .card-sub {
+      font-size: .78rem;
+      color: var(--muted);
+      margin-top: .4rem;
+    }
+
+    /* ── Controls card ─────────────────────────────────── */
+    .controls-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .controls-title {
+      font-family: var(--mono);
+      font-size: .78rem;
+      letter-spacing: .08em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 1.25rem;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: .85rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .control-row:last-child { border-bottom: none; padding-bottom: 0; }
+
+    .control-label {
+      font-size: .88rem;
+      font-weight: 600;
+    }
+    .control-desc {
+      font-size: .75rem;
+      color: var(--muted);
+      margin-top: .15rem;
+    }
+
+    /* ── Toggle switch ─────────────────────────────────── */
+    .toggle-wrap { flex-shrink: 0; }
+
+    .toggle {
+      position: relative;
+      display: inline-block;
+      width: 52px; height: 28px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: var(--border);
+      border-radius: 99px;
+      transition: background .2s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 20px; height: 20px;
+      left: 4px; top: 4px;
+      background: white;
+      border-radius: 50%;
+      transition: transform .2s;
+    }
+    .toggle input:checked + .toggle-slider { background: var(--success); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(24px); }
+    .toggle input:disabled + .toggle-slider { opacity: .45; cursor: not-allowed; }
+
+    /* ── Duty slider ───────────────────────────────────── */
+    .slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      flex: 1;
+      max-width: 260px;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      flex: 1;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid var(--surface);
+    }
+    input[type=range]:disabled { opacity: .4; cursor: not-allowed; }
+
+    .slider-val {
+      font-family: var(--mono);
+      font-size: .82rem;
+      color: var(--accent);
+      min-width: 38px;
+      text-align: right;
+    }
+
+    /* ── Log table ─────────────────────────────────────── */
+    .log-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .log-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .log-title {
+      font-family: var(--mono);
+      font-size: .78rem;
+      letter-spacing: .08em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .log-count {
+      font-family: var(--mono);
+      font-size: .72rem;
+      color: var(--muted);
+    }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .82rem;
+    }
+
+    thead th {
+      font-family: var(--mono);
+      font-size: .65rem;
+      letter-spacing: .1em;
+      color: var(--muted);
+      text-transform: uppercase;
+      text-align: left;
+      padding: .6rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(30,45,69,.5);
+      transition: background .15s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+
+    tbody td {
+      padding: .65rem 1.5rem;
+      font-family: var(--mono);
+      font-size: .78rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    tbody td:first-child { color: var(--text); }
+
+    /* ── Status pills ──────────────────────────────────── */
+    .pill {
+      display: inline-block;
+      padding: .15rem .55rem;
+      border-radius: 99px;
+      font-size: .72rem;
+      font-weight: 600;
+    }
+    .pill-on  { background: rgba(34,197,94,.12); color: var(--success); }
+    .pill-off { background: rgba(100,116,139,.12); color: var(--muted); }
+
+    /* ── Empty / loading state ─────────────────────────── */
+    .empty-row td {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+    }
+
+    /* ── Last seen ─────────────────────────────────────── */
+    #lastSeen { font-size: .8rem; color: var(--muted); margin-top: .3rem; }
+
+    /* ── Config overlay ─────────────────────────────────── */
+    .config-bar {
+      background: rgba(245,158,11,.08);
+      border: 1px solid rgba(245,158,11,.25);
+      border-radius: 12px;
+      padding: .85rem 1.25rem;
+      font-size: .82rem;
+      color: var(--warn);
+      margin-bottom: 1.5rem;
+      display: none;
+      align-items: center;
+      gap: .75rem;
+    }
+    .config-bar.visible { display: flex; }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ── Header ────────────────────────────────── -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L20 8.5v7L12 19.82 4 15.5v-7L12 4.18z"/></svg>
+      </div>
+      <h1>IoT Dashboard <span>Real-time device control</span></h1>
+    </div>
+    <div class="device-pill">
+      <div class="dot" id="onlineDot"></div>
+      <span id="deviceLabel">—</span>
+    </div>
+  </div>
+
+  <!-- ── Config warning ────────────────────────── -->
+  <div class="config-bar" id="configBar">
+    ⚠ Set your Supabase URL and anon key in the script section of this file before use.
+  </div>
+
+  <!-- ── Stat cards ────────────────────────────── -->
+  <div class="grid">
+    <div class="card">
+      <div class="card-label">Relay</div>
+      <div class="card-value" id="statRelay">—</div>
+      <div class="card-sub" id="lastSeen">Waiting for data…</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Duty cycle</div>
+      <div class="card-value" id="statDuty">—</div>
+      <div class="card-sub">0 – 255</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Uptime</div>
+      <div class="card-value" id="statUptime">—</div>
+      <div class="card-sub">seconds since last boot</div>
+    </div>
+    <div class="card">
+      <div class="card-label">IP address</div>
+      <div class="card-value" style="font-size:1.1rem" id="statIP">—</div>
+      <div class="card-sub">local network</div>
+    </div>
+  </div>
+
+  <!-- ── Controls ──────────────────────────────── -->
+  <div class="controls-card">
+    <div class="controls-title">Controls</div>
+
+    <div class="control-row">
+      <div>
+        <div class="control-label">Relay</div>
+        <div class="control-desc">Toggle the output relay on / off</div>
+      </div>
+      <div class="toggle-wrap">
+        <label class="toggle">
+          <input type="checkbox" id="relayToggle" disabled onchange="sendRelay(this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="control-row">
+      <div>
+        <div class="control-label">Duty cycle</div>
+        <div class="control-desc">PWM output (0 = off, 255 = full)</div>
+      </div>
+      <div class="slider-wrap">
+        <input type="range" id="dutySlider" min="0" max="255" value="0" disabled
+               oninput="document.getElementById('dutyVal').textContent=this.value"
+               onchange="sendDuty(this.value)">
+        <span class="slider-val" id="dutyVal">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Activity log ──────────────────────────── -->
+  <div class="log-card">
+    <div class="log-header">
+      <span class="log-title">Activity log</span>
+      <span class="log-count" id="logCount">Last 30 entries</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Relay</th>
+            <th>Duty</th>
+            <th>Uptime (s)</th>
+            <th>IP</th>
+          </tr>
+        </thead>
+        <tbody id="logBody">
+          <tr class="empty-row"><td colspan="5">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /wrapper -->
+
+<!-- ── Supabase JS SDK ──────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+<script>
+  // ──────────────────────────────────────────────────────────────
+  // ✏️  FILL THESE IN from your Supabase project:
+  //     Settings → API → Project URL + anon/public key
+  // ──────────────────────────────────────────────────────────────
+  const SUPABASE_URL  = 'https://YOUR-PROJECT.supabase.co';   // ✏️
+  const SUPABASE_ANON = 'YOUR_ANON_PUBLIC_KEY';               // ✏️
+
+  // ── Read target device from URL ?device=IoT-XXXXXX ────────────
+  const params   = new URLSearchParams(window.location.search);
+  const deviceId = params.get('device');  // e.g. "IoT-BE0911"
+
+  // ── Validate config ───────────────────────────────────────────
+  if (SUPABASE_URL.includes('YOUR-PROJECT') || SUPABASE_ANON.includes('YOUR_ANON')) {
+    document.getElementById('configBar').classList.add('visible');
+  }
+
+  document.getElementById('deviceLabel').textContent = deviceId || 'All devices';
+
+  // ── Init Supabase client ──────────────────────────────────────
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // ── Online/offline tracking ───────────────────────────────────
+  let lastSeenTs = null;
+  const OFFLINE_AFTER_MS = 30000;  // mark offline if no update in 30 s
+
+  setInterval(() => {
+    if (!lastSeenTs) return;
+    const age = Date.now() - new Date(lastSeenTs).getTime();
+    const dot = document.getElementById('onlineDot');
+    dot.className = 'dot ' + (age < OFFLINE_AFTER_MS ? 'online' : 'offline');
+    document.getElementById('lastSeen').textContent =
+      'Last seen ' + Math.floor(age / 1000) + 's ago';
+  }, 2000);
+
+  // ── Update stat cards ─────────────────────────────────────────
+  function applyState(row) {
+    if (!row) return;
+
+    lastSeenTs = row.updated_at || new Date().toISOString();
+
+    const relay   = row.relay ?? '—';
+    const duty    = row.duty  ?? 0;
+    const uptime  = row.uptime ?? '—';
+    const ip      = row.ip     ?? '—';
+
+    document.getElementById('statRelay').textContent  = relay.toUpperCase();
+    document.getElementById('statRelay').style.color  = relay === 'on' ? 'var(--success)' : 'var(--text)';
+    document.getElementById('statDuty').textContent   = duty;
+    document.getElementById('statUptime').textContent = uptime;
+    document.getElementById('statIP').textContent     = ip;
+
+    // Sync controls to device state (without triggering onchange)
+    const toggle = document.getElementById('relayToggle');
+    const slider = document.getElementById('dutySlider');
+    toggle.checked = relay === 'on';
+    slider.value   = duty;
+    document.getElementById('dutyVal').textContent = duty;
+
+    // Enable controls once we have a device
+    toggle.disabled = false;
+    slider.disabled = false;
+  }
+
+  // ── Render log table ──────────────────────────────────────────
+  function renderLog(rows) {
+    const tbody = document.getElementById('logBody');
+    if (!rows || rows.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No log entries yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => {
+      const t = new Date(r.created_at);
+      const time = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const pill = r.relay === 'on'
+        ? '<span class="pill pill-on">ON</span>'
+        : '<span class="pill pill-off">OFF</span>';
+      return `<tr>
+        <td>${time}</td>
+        <td>${pill}</td>
+        <td>${r.duty ?? '—'}</td>
+        <td>${r.uptime ?? '—'}</td>
+        <td>${r.ip ?? '—'}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('logCount').textContent = `Last ${rows.length} entries`;
+  }
+
+  // ── Fetch initial state + log ─────────────────────────────────
+  async function fetchInitial() {
+    // Latest device state
+    let stateQ = sb.from('device_state').select('*');
+    if (deviceId) stateQ = stateQ.eq('device_id', deviceId);
+    const { data: stateRows } = await stateQ.limit(1).single();
+    if (stateRows) applyState(stateRows);
+
+    // Recent log (newest first)
+    let logQ = sb.from('device_logs').select('*').order('created_at', { ascending: false });
+    if (deviceId) logQ = logQ.eq('device_id', deviceId);
+    const { data: logRows } = await logQ.limit(30);
+    renderLog(logRows || []);
+  }
+
+  // ── Subscribe to real-time state updates ──────────────────────
+  function subscribeRealtime() {
+    let filter = deviceId ? `device_id=eq.${deviceId}` : undefined;
+
+    // device_state changes (live status updates every ~5 s from ESP32)
+    sb.channel('rt-state')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'device_state', filter },
+        ({ new: row }) => { applyState(row); })
+      .subscribe();
+
+    // device_logs inserts (append to table in real time)
+    sb.channel('rt-logs')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'device_logs', filter },
+        async () => {
+          // Re-fetch latest 30 rows (simplest approach)
+          let q = sb.from('device_logs').select('*').order('created_at', { ascending: false });
+          if (deviceId) q = q.eq('device_id', deviceId);
+          const { data } = await q.limit(30);
+          renderLog(data || []);
+        })
+      .subscribe();
+  }
+
+  // ── Send a command to the device via device_commands ──────────
+  // The Node.js backend picks this up via Realtime and
+  // publishes it to iot/IoT-XXXXXX/commands on HiveMQ.
+  async function sendCommand(payload) {
+    if (!deviceId) { alert('No device selected — add ?device=IoT-XXXXXX to the URL'); return; }
+    const { error } = await sb.from('device_commands').insert({
+      device_id: deviceId,
+      payload:   payload,
+    });
+    if (error) {
+      console.error('[Dashboard] Command error:', error.message);
+      alert('Failed to send command: ' + error.message);
+    } else {
+      console.log('[Dashboard] Command sent:', payload);
+    }
+  }
+
+  function sendRelay(isOn) {
+    sendCommand({ relay: isOn ? 'on' : 'off' });
+  }
+
+  function sendDuty(value) {
+    sendCommand({ duty: parseInt(value, 10) });
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────
+  fetchInitial();
+  subscribeRealtime();
+</script>
+</body>
+</html>
