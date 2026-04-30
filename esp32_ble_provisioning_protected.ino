@@ -8,6 +8,12 @@
  *   4. After Wi-Fi connects → subscribe to HiveMQ, publish status every 5 s
  *   5. Incoming MQTT commands (relay on/off) handled in callback
  *
+ * BLE Security:
+ *   BLE_PIN (defined below) is a 6-digit passkey.
+ *   When a phone tries to connect it will be prompted to enter this PIN.
+ *   Only after correct PIN entry will the phone be able to read/write
+ *   the provisioning characteristics.
+ *
  * Pin roles:
  *   SENSOR_PIN (GPIO34) — digital input only, read-only
  *                          reported as "duty" field (0 or 1) in the payload
@@ -27,13 +33,11 @@
  * ─────────────────────────────────────────────────────────────────
  */
 
-
-#define MQTT_MAX_PACKET_SIZE 10244
-
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include <BLESecurity.h>       // ← NEW: needed for BLE PIN security
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <Preferences.h>
@@ -45,7 +49,12 @@
 #define SERVICE_UUID     "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define SSID_CHAR_UUID   "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define PASS_CHAR_UUID   "beb5483e-36e1-4688-b7f5-ea07361b26a9"
-#define STATUS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26aa"
+#define STATUS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26aa"  
+
+// ── BLE Security PIN ───────────────────────────────────────────────────
+// Change this to any 6-digit number (000000 – 999999).
+// The connecting phone will be prompted: "Enter PIN: 123456"
+#define BLE_PIN  123456
 
 // ── Provisioning page (unchanged) ─────────────────────────────────────
 #define PAGE_BASE_URL "https://darshit-vadgama.github.io/IoT/"
@@ -57,17 +66,8 @@
 #define MQTT_PASS  "6W5bCDhKm@q<!u14Y:kL"
 
 // ── Hardware pins ──────────────────────────────────────────────────────
-// CHANGED: removed RELAY_PIN/PWM_PIN, replaced with two new roles below.
-
 #define SENSOR_PIN  34   // Read-only digital input (GPIO34 is input-only on ESP32)
-                         // Connect whatever signal you want to monitor here.
-                         // Its state is reported as "duty" (0 or 1) in the payload.
-
 #define LED_PIN      2   // Built-in LED on most ESP32 dev boards (GPIO2)
-                         // Read + Write: dashboard controls it via relay "on"/"off",
-                         // and status publishes its current state back.
-                         // NOTE: on some boards the built-in LED is active-LOW —
-                         //       if ON turns the LED off, flip the HIGH/LOW in mqttCallback.
 
 // ── Timing ────────────────────────────────────────────────────────────
 #define STATUS_INTERVAL_MS  5000   // publish status every 5 s
@@ -93,8 +93,6 @@ char topicStatus[48];    // "iot/IoT-XXXXXX/status"
 char topicCommands[48];  // "iot/IoT-XXXXXX/commands"
 
 // ── Device state ──────────────────────────────────────────────────────
-// CHANGED: relayState now tracks LED_PIN (GPIO2).
-//          dutyValue is gone — sensor pin is read live in publishStatus().
 bool relayState = false;
 
 unsigned long lastPublishMs   = 0;
@@ -103,9 +101,48 @@ unsigned long lastReconnectMs = 0;
 Preferences preferences;
 
 // ─────────────────────────────────────────────────────────────────────
+// NEW: BLE Security callbacks
+// Handles the passkey display / confirmation flow.
+// ─────────────────────────────────────────────────────────────────────
+class MySecurityCallbacks : public BLESecurityCallbacks {
+  // Called when the stack needs to display a passkey to the user.
+  // We print it on Serial — you could also show it on a display.
+  void onPassKeyNotify(uint32_t pass_key) override {
+    Serial.printf("[BLE-SEC] Passkey Notify: %06d\n", pass_key);
+  }
+
+  // Called when the stack generates a passkey (static PIN mode).
+  // Return BLE_PIN so the stack uses our fixed value.
+  uint32_t onPassKeyRequest() override {
+    Serial.printf("[BLE-SEC] Passkey Request → returning %06d\n", BLE_PIN);
+    return BLE_PIN;
+  }
+
+  // Called to confirm the passkey on both sides (numeric comparison).
+  // For static PIN we always return true.
+  bool onConfirmPIN(uint32_t pin) override {
+    Serial.printf("[BLE-SEC] Confirm PIN: %06d\n", pin);
+    return true;
+  }
+
+  // Called when authentication completes.
+  void onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl) override {
+    if (cmpl.success) {
+      Serial.println("[BLE-SEC] Authentication successful ✓");
+    } else {
+      Serial.printf("[BLE-SEC] Authentication FAILED — reason: 0x%02X\n", cmpl.fail_reason);
+    }
+  }
+
+  // Required override — return true if pre-authentication is needed.
+  bool onSecurityRequest() override {
+    Serial.println("[BLE-SEC] Security request received");
+    return true;
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // MQTT: incoming command handler
-// Expected payload: {"relay":"on"} or {"relay":"off"}
-// CHANGED: removed duty/PWM handling — LED_PIN is the only actuator now.
 // ─────────────────────────────────────────────────────────────────────
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.printf("[MQTT] Message on %s\n", topic);
@@ -119,25 +156,22 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   if (doc.containsKey("relay")) {
     relayState = strcmp(doc["relay"], "on") == 0;
-    digitalWrite(LED_PIN, relayState ? HIGH : LOW);  // CHANGED: drives LED_PIN
+    digitalWrite(LED_PIN, relayState ? HIGH : LOW);
     Serial.printf("[CMD]  LED (relay) → %s\n", relayState ? "ON" : "OFF");
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // MQTT: publish current device state
-// CHANGED: duty now carries the live digitalRead of SENSOR_PIN (0 or 1).
-//          relay carries the LED_PIN state as before ("on"/"off").
-//          uptime and ip are unchanged.
 // ─────────────────────────────────────────────────────────────────────
 void publishStatus() {
   if (!mqtt.connected()) return;
 
-  int sensorState = digitalRead(SENSOR_PIN);   // CHANGED: read sensor pin live
+  int sensorState = digitalRead(SENSOR_PIN);
 
   StaticJsonDocument<128> doc;
-  doc["relay"]  = relayState ? "on" : "off";   // LED_PIN (read/write)
-  doc["duty"]   = sensorState;                  // SENSOR_PIN (read-only), 0 or 1
+  doc["relay"]  = relayState ? "on" : "off";
+  doc["duty"]   = sensorState;
   doc["uptime"] = millis() / 1000;
   doc["ip"]     = WiFi.localIP().toString();
 
@@ -152,7 +186,7 @@ void publishStatus() {
 // ─────────────────────────────────────────────────────────────────────
 void connectMQTT() {
   wifiSecureClient.setInsecure();
-  mqtt.setBufferSize(1024);
+
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
   mqtt.setKeepAlive(60);
@@ -170,7 +204,7 @@ void connectMQTT() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// BLE server callbacks (unchanged)
+// BLE server callbacks
 // ─────────────────────────────────────────────────────────────────────
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) override {
@@ -216,7 +250,7 @@ class PassCallbacks : public BLECharacteristicCallbacks {
 };
 
 // ─────────────────────────────────────────────────────────────────────
-// BLE helpers (unchanged)
+// BLE helpers
 // ─────────────────────────────────────────────────────────────────────
 void sendBLEStatus(const String& status) {
   if (pStatusChar && deviceConnected) {
@@ -229,20 +263,49 @@ void sendBLEStatus(const String& status) {
 void startBLE() {
   Serial.println("[BLE] Initialising...");
   BLEDevice::init(deviceName);
+
+  // ── NEW: Configure BLE security with a static PIN ─────────────────
+  BLEDevice::setSecurityCallbacks(new MySecurityCallbacks());
+
+  BLESecurity* pSecurity = new BLESecurity();
+  pSecurity->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+  //   SC   = Secure Connections (BLE 4.2+)
+  //   MITM = Man-in-the-middle protection  ← this enforces the PIN
+  //   BOND = remember the paired device
+
+  pSecurity->setCapability(ESP_IO_CAP_OUT);
+  //   IO capability "Display Only" → ESP32 shows the PIN on Serial.
+  //   The phone generates a random key and prompts the user to confirm
+  //   it matches what the device displays.
+  //   To use a FIXED PIN instead, keep setStaticPIN() below.
+
+  pSecurity->setStaticPIN(BLE_PIN);
+  //   Forces the passkey to always be BLE_PIN (123456 by default).
+  //   Remove this line if you prefer a random PIN each pairing.
+
+  pSecurity->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
+  Serial.printf("[BLE-SEC] PIN security enabled — passkey: %06d\n", BLE_PIN);
+  // ──────────────────────────────────────────────────────────────────
+
   BLEDevice::setMTU(185);
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
   BLEService* pService = pServer->createService(SERVICE_UUID);
 
+  // ── NEW: Require encryption on SSID & Password characteristics ────
+  // A phone must complete PIN pairing before it can write these.
   BLECharacteristic* pSSIDChar = pService->createCharacteristic(
     SSID_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pSSIDChar->setAccessPermissions(ESP_GATT_PERM_WRITE_ENCRYPTED);  // ← encrypted write only
   pSSIDChar->setCallbacks(new SSIDCallbacks());
 
   BLECharacteristic* pPassChar = pService->createCharacteristic(
     PASS_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pPassChar->setAccessPermissions(ESP_GATT_PERM_WRITE_ENCRYPTED);  // ← encrypted write only
   pPassChar->setCallbacks(new PassCallbacks());
 
+  // Status characteristic — notify only, no PIN needed to receive updates
   pStatusChar = pService->createCharacteristic(
     STATUS_CHAR_UUID, BLECharacteristic::PROPERTY_NOTIFY);
   pStatusChar->addDescriptor(new BLE2902());
@@ -279,17 +342,14 @@ void setup() {
   Serial.begin(115200);
   Serial.println("\n\n=== ESP32 BLE Provisioning + MQTT ===");
 
-  // CHANGED: init SENSOR_PIN as input, LED_PIN as output
-  pinMode(SENSOR_PIN, INPUT);           // read-only
-  pinMode(LED_PIN,    OUTPUT);          // read + write (built-in LED)
-  digitalWrite(LED_PIN, LOW);           // LED off at boot
+  pinMode(SENSOR_PIN, INPUT);
+  pinMode(LED_PIN,    OUTPUT);
+  digitalWrite(LED_PIN, LOW);
 
-  // Derive unique device name from last 3 bytes of factory MAC (unchanged)
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_WIFI_STA);
   snprintf(deviceName, sizeof(deviceName), "IoT-%02X%02X%02X", mac[3], mac[4], mac[5]);
 
-  // Build MQTT topic strings (unchanged)
   snprintf(topicStatus,   sizeof(topicStatus),   "iot/%s/status",   deviceName);
   snprintf(topicCommands, sizeof(topicCommands),  "iot/%s/commands", deviceName);
 
@@ -299,7 +359,6 @@ void setup() {
   Serial.printf("[QR]   Generate QR : python generate_qr.py %s\n", deviceName);
   Serial.printf("[QR]   Or URL      : %s?device=%s\n\n", PAGE_BASE_URL, deviceName);
 
-  // Try saved credentials first (unchanged)
   preferences.begin("wifi-creds", true);
   String savedSSID = preferences.getString("ssid", "");
   String savedPass = preferences.getString("pass", "");
@@ -321,7 +380,7 @@ void setup() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// LOOP (unchanged structure)
+// LOOP
 // ─────────────────────────────────────────────────────────────────────
 void loop() {
 
@@ -372,5 +431,5 @@ void loop() {
 
   // ── 3. Your IoT application logic goes here ───────────────────────
 
-  delay(50);
+  delay(10);
 }

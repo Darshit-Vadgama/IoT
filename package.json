@@ -1,0 +1,18 @@
+{
+  "name": "iot-backend",
+  "version": "1.0.0",
+  "description": "MQTT ↔ Supabase bridge for ESP32 IoT devices",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.4",
+    "dotenv": "^16.4.5",
+    "mqtt": "^5.3.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
