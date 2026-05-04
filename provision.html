@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0a0f1e" />
+  <title>IoT Device Setup</title>
+
+  <style>
+    /* ── Fonts ───────────────────────────────────────────────── */
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;600&display=swap');
+
+    /* ── Variables ───────────────────────────────────────────── */
+    :root {
+      --bg:        #0a0f1e;
+      --surface:   #111827;
+      --border:    #1e2d45;
+      --accent:    #00d4ff;
+      --accent2:   #0070f3;
+      --success:   #22c55e;
+      --error:     #ef4444;
+      --warn:      #f59e0b;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --mono:      'Space Mono', monospace;
+      --sans:      'DM Sans', sans-serif;
+    }
+
+    /* ── Reset ───────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      overflow-x: hidden;
+    }
+
+    /* ── Background grid ─────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Glow blob ───────────────────────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 400px;
+      background: radial-gradient(ellipse, rgba(0,112,243,.18) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Card ────────────────────────────────────────────────── */
+    .card {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 420px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2rem;
+      box-shadow: 0 0 0 1px rgba(0,212,255,.06), 0 24px 64px rgba(0,0,0,.5);
+    }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .logo-icon svg { width: 22px; height: 22px; fill: white; }
+
+    h1 {
+      font-family: var(--mono);
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -.02em;
+      line-height: 1.2;
+    }
+    h1 span { display: block; font-size: .7rem; color: var(--muted); font-weight: 400; margin-top: .2rem; letter-spacing: .04em; }
+
+    /* ── Step indicator ──────────────────────────────────────── */
+    .steps {
+      display: flex;
+      gap: .4rem;
+      margin-bottom: 1.75rem;
+    }
+    .step-dot {
+      flex: 1; height: 3px; border-radius: 99px;
+      background: var(--border);
+      transition: background .3s ease;
+    }
+    .step-dot.active  { background: var(--accent); }
+    .step-dot.done    { background: var(--success); }
+
+    /* ── Section (each step panel) ───────────────────────────── */
+    .section { display: none; }
+    .section.visible { display: block; }
+
+    /* ── iOS warning ─────────────────────────────────────────── */
+    .ios-warning {
+      background: rgba(245,158,11,.08);
+      border: 1px solid rgba(245,158,11,.3);
+      border-radius: 10px;
+      padding: 1rem;
+      font-size: .82rem;
+      color: var(--warn);
+      margin-bottom: 1.25rem;
+      line-height: 1.5;
+    }
+    .ios-warning strong { display: block; margin-bottom: .25rem; }
+    .ios-warning a { color: var(--accent); }
+
+    /* ── Description text ────────────────────────────────────── */
+    .desc {
+      font-size: .88rem;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+      line-height: 1.55;
+    }
+
+    /* ── Device name pill ────────────────────────────────────── */
+    .device-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      background: rgba(0,212,255,.07);
+      border: 1px solid rgba(0,212,255,.2);
+      border-radius: 99px;
+      padding: .35rem .8rem;
+      font-family: var(--mono);
+      font-size: .78rem;
+      color: var(--accent);
+      margin-bottom: 1.5rem;
+    }
+    .pulse {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 1.6s ease infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: .4; transform: scale(.7); }
+    }
+
+    /* ── Buttons ─────────────────────────────────────────────── */
+    .btn {
+      width: 100%;
+      padding: .9rem 1.5rem;
+      border: none;
+      border-radius: 12px;
+      font-family: var(--mono);
+      font-size: .85rem;
+      font-weight: 700;
+      letter-spacing: .03em;
+      cursor: pointer;
+      transition: all .18s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+    }
+    .btn:active { transform: scale(.97); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(0,112,243,.35);
+    }
+    .btn-primary:hover { box-shadow: 0 4px 28px rgba(0,112,243,.55); }
+    .btn-primary:disabled {
+      opacity: .45; cursor: not-allowed;
+      transform: none; box-shadow: none;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: .78rem;
+      padding: .6rem 1rem;
+      margin-top: .75rem;
+    }
+    .btn-ghost:hover { border-color: var(--muted); color: var(--text); }
+
+    /* ── Form inputs ─────────────────────────────────────────── */
+    .field { margin-bottom: 1rem; }
+    label {
+      display: block;
+      font-size: .75rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: .4rem;
+      font-family: var(--mono);
+    }
+    .input-wrap { position: relative; }
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: .95rem;
+      padding: .75rem 2.8rem .75rem 1rem;
+      outline: none;
+      transition: border .2s;
+    }
+    input:focus { border-color: var(--accent2); }
+    input::placeholder { color: var(--muted); }
+
+    /* eye toggle */
+    .eye-btn {
+      position: absolute;
+      right: .75rem; top: 50%;
+      transform: translateY(-50%);
+      background: none; border: none;
+      cursor: pointer; color: var(--muted);
+      padding: .25rem;
+      transition: color .2s;
+    }
+    .eye-btn:hover { color: var(--text); }
+    .eye-btn svg { width: 18px; height: 18px; display: block; }
+
+    /* ── Status box ──────────────────────────────────────────── */
+    .status-box {
+      border-radius: 12px;
+      padding: 1.25rem;
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    .status-box.connecting {
+      background: rgba(0,112,243,.08);
+      border: 1px solid rgba(0,112,243,.25);
+    }
+    .status-box.success {
+      background: rgba(34,197,94,.08);
+      border: 1px solid rgba(34,197,94,.3);
+    }
+    .status-box.error {
+      background: rgba(239,68,68,.08);
+      border: 1px solid rgba(239,68,68,.3);
+    }
+
+    .status-icon { font-size: 2.5rem; margin-bottom: .5rem; }
+    .status-title {
+      font-family: var(--mono);
+      font-size: .95rem;
+      font-weight: 700;
+      margin-bottom: .3rem;
+    }
+    .status-sub { font-size: .8rem; color: var(--muted); }
+
+    /* spinner */
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto .75rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── IP chip ─────────────────────────────────────────────── */
+    .ip-chip {
+      display: inline-block;
+      background: rgba(34,197,94,.1);
+      border: 1px solid rgba(34,197,94,.3);
+      border-radius: 99px;
+      padding: .25rem .8rem;
+      font-family: var(--mono);
+      font-size: .8rem;
+      color: var(--success);
+      margin-top: .6rem;
+    }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    .footer {
+      margin-top: 1.5rem;
+      text-align: center;
+      font-size: .72rem;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+
+    <!-- Header -->
+    <div class="logo">
+      <div class="logo-icon">
+        <!-- WiFi/IoT icon -->
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M1.41 8.59C5.01 4.98 9.77 3 12 3s6.99 1.98 10.59 5.59l-1.42 1.41C17.94 6.72 14.11 5 12 5S6.06 6.72 3.83 10l-1.42-1.41zM5.66 12.34A8.48 8.48 0 0 1 12 10c2.47 0 4.7.99 6.34 2.59l1.42-1.41C17.94 9.35 15.1 8 12 8s-5.94 1.35-7.76 3.17l1.42 1.17zM12 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0-2a5.96 5.96 0 0 0-4.24 1.76l1.42 1.42A3.97 3.97 0 0 1 12 14a3.97 3.97 0 0 1 2.82 1.18l1.42-1.42A5.96 5.96 0 0 0 12 12z"/>
+        </svg>
+      </div>
+      <h1>IoT Device Setup<span>Wi-Fi Provisioning via BLE</span></h1>
+    </div>
+
+    <!-- Step dots -->
+    <div class="steps">
+      <div class="step-dot active"  id="dot1"></div>
+      <div class="step-dot"         id="dot2"></div>
+      <div class="step-dot"         id="dot3"></div>
+    </div>
+
+    <!-- ── STEP 1: Connect via BLE ──────────────────────────── -->
+    <div class="section visible" id="step1">
+      <div id="ios-banner" style="display:none" class="ios-warning">
+        <strong>⚠️ iOS Safari Not Supported</strong>
+        Web Bluetooth requires the free
+        <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank">Bluefy browser</a>
+        on iPhone/iPad. Open this page in Bluefy to continue.
+      </div>
+
+      <p class="desc">
+        Press the button below to scan for your IoT device. Make sure the ESP32 is powered on.
+      </p>
+
+      <div class="device-pill">
+        <div class="pulse"></div>
+        IoT-Setup
+      </div>
+
+      <button class="btn btn-primary" id="connectBtn" onclick="connectBLE()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+          <path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41l5.59 5.59L5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/>
+        </svg>
+        Connect to Device
+      </button>
+    </div>
+
+    <!-- ── STEP 2: Enter Wi-Fi credentials ──────────────────── -->
+    <div class="section" id="step2">
+      <p class="desc">
+        Device connected ✓ &nbsp;Enter your Wi-Fi network details below and tap <strong>Send to Device</strong>.
+      </p>
+
+      <div class="field">
+        <label>Network Name (SSID)</label>
+        <div class="input-wrap">
+          <input type="text" id="ssidInput" placeholder="My Home WiFi" autocomplete="off" autocorrect="off" spellcheck="false" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Password</label>
+        <div class="input-wrap">
+          <input type="password" id="passInput" placeholder="••••••••••" autocomplete="off" id="passInput" />
+          <button class="eye-btn" onclick="togglePass()" title="Show/hide password">
+            <svg id="eyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="sendBtn" onclick="sendCredentials()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>
+        Send to Device
+      </button>
+
+      <button class="btn btn-ghost" onclick="disconnectBLE()">← Disconnect</button>
+    </div>
+
+    <!-- ── STEP 3: Result ─────────────────────────────────────── -->
+    <div class="section" id="step3">
+      <div class="status-box connecting" id="statusBox">
+        <div class="spinner"></div>
+        <div class="status-title">Connecting to Wi-Fi…</div>
+        <div class="status-sub">This takes up to 15 seconds</div>
+      </div>
+      <button class="btn btn-ghost" id="retryBtn" style="display:none" onclick="retryFromStep2()">← Try again</button>
+    </div>
+
+  </div><!-- /card -->
+
+  <div class="footer">BLE provisioning · ESP32</div>
+
+  <script>
+    // ── BLE UUIDs (must match esp32_ble_provisioning.ino) ──────
+    const SERVICE_UUID     = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+    const SSID_CHAR_UUID   = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+    const PASS_CHAR_UUID   = 'beb5483e-36e1-4688-b7f5-ea07361b26a9';
+    const STATUS_CHAR_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26aa';
+
+    // ── Read target device ID from URL ?device=IoT-XXXXXX ───────
+    // This is embedded in the QR code so the page knows exactly
+    // which ESP32 to connect to — no ambiguity when multiple nearby.
+    const params     = new URLSearchParams(window.location.search);
+    const targetDevice = params.get('device');  // e.g. "IoT-A4CF12"
+
+    let bleDevice, bleServer, ssidChar, passChar, statusChar;
+
+    const enc = new TextEncoder();
+
+    // ── iOS / browser detection ─────────────────────────────────
+    function isIOS() {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    }
+    function hasWebBluetooth() {
+      return navigator.bluetooth !== undefined;
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      // Show which specific device this QR was generated for
+      if (targetDevice) {
+        document.querySelector('.device-pill').innerHTML =
+          `<div class="pulse"></div>${targetDevice}`;
+      }
+      if (isIOS() && !hasWebBluetooth()) {
+        document.getElementById('ios-banner').style.display = 'block';
+        document.getElementById('connectBtn').disabled = true;
+      } else if (!hasWebBluetooth()) {
+        document.getElementById('connectBtn').disabled = true;
+        document.getElementById('connectBtn').textContent = 'Web Bluetooth not supported in this browser';
+      }
+    });
+
+    // ── Step navigation ─────────────────────────────────────────
+    function showStep(n) {
+      [1,2,3].forEach(i => {
+        document.getElementById(`step${i}`).classList.toggle('visible', i === n);
+        const dot = document.getElementById(`dot${i}`);
+        dot.className = 'step-dot' + (i < n ? ' done' : i === n ? ' active' : '');
+      });
+    }
+
+    // ── Connect BLE ─────────────────────────────────────────────
+    async function connectBLE() {
+      const btn = document.getElementById('connectBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;margin:0;border-width:2px"></div> Scanning…';
+
+      try {
+        // If ?device=IoT-XXXXXX is in the URL, filter by that exact name.
+        // This ensures the picker only shows THIS specific ESP32 unit.
+        // Fallback (direct browser access): show all devices with "IoT-" prefix.
+        const filter = targetDevice
+          ? { name: targetDevice }
+          : { namePrefix: 'IoT-' };
+
+        bleDevice = await navigator.bluetooth.requestDevice({
+          filters: [filter],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+        bleServer = await bleDevice.gatt.connect();
+        const service = await bleServer.getPrimaryService(SERVICE_UUID);
+
+        ssidChar   = await service.getCharacteristic(SSID_CHAR_UUID);
+        passChar   = await service.getCharacteristic(PASS_CHAR_UUID);
+        statusChar = await service.getCharacteristic(STATUS_CHAR_UUID);
+
+        await statusChar.startNotifications();
+        statusChar.addEventListener('characteristicvaluechanged', onStatusNotify);
+
+        showStep(2);
+      } catch (err) {
+        console.error(err);
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41l5.59 5.59L5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg> Connect to Device`;
+
+        if (err.name !== 'NotFoundError') {
+          alert('Connection failed: ' + err.message);
+        }
+      }
+    }
+
+    // ── Send credentials ─────────────────────────────────────────
+    async function sendCredentials() {
+      const ssid = document.getElementById('ssidInput').value.trim();
+      const pass = document.getElementById('passInput').value;
+
+      if (!ssid) { alert('Please enter a network name.'); return; }
+      if (!bleServer?.connected) { alert('BLE disconnected. Please reconnect.'); showStep(1); return; }
+
+      const btn = document.getElementById('sendBtn');
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+
+      try {
+        await ssidChar.writeValue(enc.encode(ssid));
+        await passChar.writeValue(enc.encode(pass));
+        showStep(3);
+        setStatus('connecting');
+      } catch (err) {
+        alert('Failed to send credentials: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Send to Device';
+      }
+    }
+
+    // ── Status notification from ESP32 ───────────────────────────
+    function onStatusNotify(event) {
+      const raw = new TextDecoder().decode(event.target.value);
+      console.log('[BLE status]', raw);
+
+      if (raw === 'connecting') {
+        setStatus('connecting');
+      } else if (raw.startsWith('connected:')) {
+        const ip = raw.split(':')[1];
+        setStatus('success', ip);
+      } else if (raw === 'failed') {
+        setStatus('error');
+      }
+    }
+
+    // ── Update the result UI ─────────────────────────────────────
+    function setStatus(state, ip) {
+      const box  = document.getElementById('statusBox');
+      const retry = document.getElementById('retryBtn');
+      box.className = 'status-box ' + (state === 'connecting' ? 'connecting' : state === 'success' ? 'success' : 'error');
+
+      if (state === 'connecting') {
+        box.innerHTML = `
+          <div class="spinner"></div>
+          <div class="status-title">Connecting to Wi-Fi…</div>
+          <div class="status-sub">This takes up to 15 seconds</div>`;
+        retry.style.display = 'none';
+      } else if (state === 'success') {
+        box.innerHTML = `
+          <div class="status-icon">✓</div>
+          <div class="status-title" style="color:var(--success)">Connected!</div>
+          <div class="status-sub">Redirecting to dashboard…</div>
+          ${ip ? `<div class="ip-chip">${ip}</div>` : ''}`;
+        retry.style.display = 'none';
+        setTimeout(() => { window.location.href = 'https://darshit-vadgama.github.io/IoT/'; }, 2000);
+      } else {
+        box.innerHTML = `
+          <div class="status-icon">✗</div>
+          <div class="status-title" style="color:var(--error)">Connection Failed</div>
+          <div class="status-sub">Check your SSID and password, then try again.</div>`;
+        retry.style.display = 'block';
+      }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────
+    function onDisconnected() {
+      console.log('[BLE] Device disconnected');
+    }
+
+    function disconnectBLE() {
+      if (bleDevice?.gatt?.connected) bleDevice.gatt.disconnect();
+      showStep(1);
+      document.getElementById('connectBtn').disabled = false;
+      document.getElementById('connectBtn').innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41l5.59 5.59L5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg> Connect to Device`;
+    }
+
+    function retryFromStep2() {
+      showStep(2);
+      document.getElementById('sendBtn').disabled = false;
+      document.getElementById('sendBtn').innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg> Send to Device`;
+    }
+
+    function togglePass() {
+      const inp = document.getElementById('passInput');
+      const ico = document.getElementById('eyeIcon');
+      if (inp.type === 'password') {
+        inp.type = 'text';
+        ico.innerHTML = `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`;
+      } else {
+        inp.type = 'password';
+        ico.innerHTML = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
+      }
+    }
+  </script>
+</body>
+</html>
