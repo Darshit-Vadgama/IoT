@@ -563,10 +563,13 @@
         box.innerHTML = `
           <div class="status-icon">✓</div>
           <div class="status-title" style="color:var(--success)">Connected!</div>
-          <div class="status-sub">Redirecting to dashboard…</div>
+          <div class="status-sub">Redirecting to dashboard...</div>
           ${ip ? `<div class="ip-chip">${ip}</div>` : ''}`;
         retry.style.display = 'none';
-        setTimeout(() => { window.location.href = 'https://darshit-vadgama.github.io/IoT/'; }, 2000);
+        // Pass ?device= so dashboard knows which device to control and show
+        var dest = 'https://darshit-vadgama.github.io/IoT/'
+          + (targetDevice ? '?device=' + encodeURIComponent(targetDevice) : '');
+        setTimeout(function(){ window.location.href = dest; }, 2000);
       } else {
         box.innerHTML = `
           <div class="status-icon">✗</div>
