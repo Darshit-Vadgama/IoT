@@ -115,11 +115,78 @@ mqttClient.on('message', async (topic, message) => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// Supabase → MQTT: forward new commands to the right device
+// Command dispatch — shared by Realtime AND polling fallback
 //
-// Dashboard inserts into device_commands:
-//   { device_id: "IoT-BE0911", payload: { relay: "on" } }
-// We pick that up via Realtime and publish to the device's topic.
+// BUG-1 FIX: Supabase Realtime for postgres_changes only fires when
+// the table is added to the supabase_realtime publication:
+//   ALTER PUBLICATION supabase_realtime ADD TABLE device_commands;
+// Many projects skip this step, so Realtime never fires and commands
+// are silently lost.  The polling fallback below catches every command
+// within ~5 s regardless of publication state.
+// ─────────────────────────────────────────────────────────────────
+
+// Track IDs we've already forwarded so both code paths don't double-publish
+const forwardedIds = new Set();
+
+function publishCommand(row) {
+  if (!row || !row.id || !row.device_id || !row.payload) {
+    console.warn('[CMD] Skipping malformed command row:', row);
+    return;
+  }
+  if (forwardedIds.has(row.id)) return;   // already sent via Realtime or poll
+  forwardedIds.add(row.id);
+
+  // Prune old IDs to avoid unbounded memory growth (keep last 500)
+  if (forwardedIds.size > 500) {
+    const first = forwardedIds.values().next().value;
+    forwardedIds.delete(first);
+  }
+
+  const topic   = `iot/${row.device_id}/commands`;
+  const message = JSON.stringify(row.payload);
+
+  if (!mqttClient.connected) {
+    console.warn('[CMD] MQTT not connected — command dropped for', row.device_id);
+    return;
+  }
+  mqttClient.publish(topic, message, { qos: 1 });
+  console.log(`[MQTT] Command → ${topic}:`, message);
+}
+
+// ── Polling fallback: catch commands every 5 s ──────────────────
+// Uses a sliding window of the last 10 s to handle clock skew.
+// Once Realtime is properly configured this is a cheap no-op (all
+// IDs are already in forwardedIds, so nothing is re-published).
+let lastPollTime = new Date(Date.now() - 10000).toISOString();
+
+async function pollDeviceCommands() {
+  try {
+    const { data: rows, error } = await supabase
+      .from('device_commands')
+      .select('*')
+      .gte('created_at', lastPollTime)
+      .order('created_at', { ascending: true });
+
+    if (error) { console.error('[Poll] Query error:', error.message); return; }
+    if (!rows || rows.length === 0) return;
+
+    for (const row of rows) publishCommand(row);
+
+    // Advance window to just before the newest row we saw
+    // (keep 1 s overlap to handle sub-second clock skew)
+    const newest = rows[rows.length - 1].created_at;
+    lastPollTime = new Date(new Date(newest).getTime() - 1000).toISOString();
+  } catch (err) {
+    console.error('[Poll] Unexpected error:', err.message);
+  }
+}
+
+setInterval(pollDeviceCommands, 5000);
+
+// ─────────────────────────────────────────────────────────────────
+// Supabase → MQTT: forward new commands to the right device
+// Primary path: Supabase Realtime (instant, requires publication setup)
+// Fallback:     polling above    (≤5 s delay, always works)
 // ─────────────────────────────────────────────────────────────────
 supabase
   .channel('device-commands-channel')
@@ -127,15 +194,8 @@ supabase
     'postgres_changes',
     { event: 'INSERT', schema: 'public', table: 'device_commands' },
     ({ new: row }) => {
-      if (!row.device_id || !row.payload) {
-        console.warn('[Realtime] Skipping malformed command row:', row);
-        return;
-      }
-
-      const topic   = `iot/${row.device_id}/commands`;
-      const message = JSON.stringify(row.payload);
-      mqttClient.publish(topic, message, { qos: 1 });
-      console.log(`[MQTT] Command → ${topic}:`, message);
+      console.log('[Realtime] New command row:', row.id);
+      publishCommand(row);
     }
   )
   .subscribe((status, err) => {

@@ -489,6 +489,14 @@
   // ── Init Supabase client ──────────────────────────────────────
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
+  // ── Optimistic command lock ───────────────────────────────────
+  // When the user sends a command we lock the controls for 8 s so the
+  // ESP32's next status heartbeat (~5 s) doesn't snap the toggle back
+  // before the device has had time to act on the command.
+  let commandPendingUntil = 0;
+  function lockControls(ms = 8000) { commandPendingUntil = Date.now() + ms; }
+  function controlsLocked()        { return Date.now() < commandPendingUntil; }
+
   // ── Online/offline tracking ───────────────────────────────────
   let lastSeenTs = null;
   const OFFLINE_AFTER_MS = 30000;  // mark offline if no update in 30 s
@@ -508,27 +516,33 @@
 
     lastSeenTs = row.updated_at || new Date().toISOString();
 
-    const relay   = row.relay ?? '—';
-    const duty    = row.duty  ?? 0;
-    const uptime  = row.uptime ?? '—';
-    const ip      = row.ip     ?? '—';
+    const relay  = row.relay  ?? '—';
+    const duty   = row.duty   ?? 0;
+    const uptime = row.uptime ?? '—';
+    const ip     = row.ip     ?? '—';
 
+    // Always update the read-only stat cards
     document.getElementById('statRelay').textContent  = relay.toUpperCase();
     document.getElementById('statRelay').style.color  = relay === 'on' ? 'var(--success)' : 'var(--text)';
     document.getElementById('statDuty').textContent   = duty;
     document.getElementById('statUptime').textContent = uptime;
     document.getElementById('statIP').textContent     = ip;
 
-    // Sync controls to device state (without triggering onchange)
-    const toggle = document.getElementById('relayToggle');
-    const slider = document.getElementById('dutySlider');
-    toggle.checked = relay === 'on';
-    slider.value   = duty;
-    document.getElementById('dutyVal').textContent = duty;
+    // ── BUG-2 FIX ─────────────────────────────────────────────────
+    // Only sync the interactive controls to device state when no command
+    // is pending. Without this, the ESP32's ~5 s heartbeat overwrites
+    // the toggle the instant the user taps it, making it snap back.
+    if (!controlsLocked()) {
+      const toggle = document.getElementById('relayToggle');
+      const slider = document.getElementById('dutySlider');
+      toggle.checked = relay === 'on';
+      slider.value   = duty;
+      document.getElementById('dutyVal').textContent = duty;
+    }
 
-    // Enable controls once we have a device
-    toggle.disabled = false;
-    slider.disabled = false;
+    // Enable controls once we have a live device
+    document.getElementById('relayToggle').disabled = false;
+    document.getElementById('dutySlider').disabled  = false;
   }
 
   // ── Render log table ──────────────────────────────────────────
@@ -596,8 +610,8 @@
   }
 
   // ── Send a command to the device via device_commands ──────────
-  // The Node.js backend picks this up via Realtime and
-  // publishes it to iot/IoT-XXXXXX/commands on HiveMQ.
+  // The Node.js backend picks this up (via Realtime OR polling fallback)
+  // and publishes it to  iot/IoT-XXXXXX/commands  on HiveMQ.
   async function sendCommand(payload) {
     if (!deviceId) { alert('No device selected — add ?device=IoT-XXXXXX to the URL'); return; }
     const { error } = await sb.from('device_commands').insert({
@@ -607,16 +621,26 @@
     if (error) {
       console.error('[Dashboard] Command error:', error.message);
       alert('Failed to send command: ' + error.message);
+      // Release the lock immediately so the next device heartbeat can re-sync
+      commandPendingUntil = 0;
     } else {
       console.log('[Dashboard] Command sent:', payload);
     }
   }
 
+  // ── BUG-3 FIX ─────────────────────────────────────────────────
+  // Lock controls BEFORE the async insert so the UI stays in the
+  // optimistic state even if the heartbeat fires during the await.
   function sendRelay(isOn) {
+    lockControls(8000);
+    // Show a brief "sending" tint on the toggle label
+    const lbl = document.querySelector('.control-label');
+    if (lbl) { lbl.style.opacity = '0.5'; setTimeout(() => lbl.style.opacity = '', 1500); }
     sendCommand({ relay: isOn ? 'on' : 'off' });
   }
 
   function sendDuty(value) {
+    lockControls(8000);
     sendCommand({ duty: parseInt(value, 10) });
   }
 
